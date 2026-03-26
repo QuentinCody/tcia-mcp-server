@@ -6,7 +6,7 @@ interface SchemaEnv {
     TCIA_DATA_DO?: unknown;
 }
 
-export function registerGetSchema(server: McpServer, env?: SchemaEnv) {
+export function registerGetSchema(server: McpServer, env?: SchemaEnv): void {
     const handler = createGetSchemaHandler("TCIA_DATA_DO", "tcia");
 
     server.registerTool(
