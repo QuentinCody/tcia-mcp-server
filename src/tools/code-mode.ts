@@ -23,6 +23,8 @@ export function registerCodeMode(
 
     const executeTool = createExecuteTool({
         prefix: "tcia",
+        // Verifiable provenance: tcia_execute results carry a _meta.citation.
+        source: { id: "tcia", name: "The Cancer Imaging Archive (TCIA)", url: "https://www.cancerimagingarchive.net" },
         catalog: tciaCatalog,
         apiFetch,
         doNamespace: env.TCIA_DATA_DO,
