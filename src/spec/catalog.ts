@@ -1,21 +1,25 @@
 import type { ApiCatalog } from "@bio-mcp/shared/codemode/catalog";
+import { idcEndpoints } from "./idc";
 
 export const tciaCatalog: ApiCatalog = {
-    name: "The Cancer Imaging Archive (TCIA)",
+    name: "TCIA NBIA + Imaging Data Commons",
     baseUrl: "https://services.cancerimagingarchive.net/nbia-api/services/v1",
     version: "1.0",
-    auth: "none (public API; restricted collections require API key)",
-    endpointCount: 10,
+    auth: "Public NBIA metadata and public IDC v3 beta REST API; no IDC credentials or custom backend required. Restricted NBIA access is not configured here.",
+    endpointCount: 10 + idcEndpoints.length,
     notes:
-        "- 152+ imaging collections covering cancer types (TCGA, ACRIN, clinical trials)\n" +
-        "- 99 body part categories, multiple imaging modalities (CT, MR, PT, DX, etc.)\n" +
+        "- Public cancer imaging metadata across collections, patients, studies and series. Discover current coverage rather than assuming fixed counts.\n" +
+        "- TCIA ends helpdesk support for older NBIA APIs in October 2026; no full decommissioning date has been specified. Existing NBIA v1 paths remain available here.\n" +
+        "- /idc/v3/* maps to the official public IDC v3 beta REST API. /idc/releases discovers versioned bulk index assets. The hosted API serves current data; expected_index_version rejects drift, not historical retrieval. Matching before/after version observations are not an atomic snapshot.\n" +
+        "- /idc/series/{series_instance_uid}/objects resolves one exact series and pages its current GCS object metadata. Keep manifest/listing evidence and pagination.next identity guards. File sizes and generations remain strings; checksums are advertised, not verified. No image bytes are downloaded.\n" +
         "- No authentication required for public collections\n" +
-        "- All responses are JSON arrays\n" +
+        "- NBIA commonly returns JSON arrays. IDC keeps native fields, filters_applied, warnings and pagination plus _idc source/version metadata; top-level arrays are wrapped in rows. Requests are bounded to 64 KiB, responses to 2 MiB and 45 seconds total. Narrow queries if capped. Keep staging and error handles intact.\n" +
         "- Use format=json query param if responses come back non-JSON\n" +
         "- For large collections (TCGA-GBM, TCGA-BRCA), patient/study/series data can be very large and will auto-stage\n" +
         "- Date format for NewStudiesInPatientCollection: YYYY/MM/DD\n" +
         "- Common collections: TCGA-GBM, TCGA-BRCA, TCGA-LUAD, LIDC-IDRI, NSCLC-Radiomics",
     endpoints: [
+        ...idcEndpoints,
         {
             method: "GET",
             path: "/getCollectionValues",
@@ -113,6 +117,24 @@ export const tciaCatalog: ApiCatalog = {
                 { name: "Collection", type: "string", required: true, description: "Collection name (e.g., TCGA-GBM)" },
                 { name: "Date", type: "string", required: true, description: "Date in YYYY/MM/DD format (e.g., 2024/01/01)" },
             ],
+        },
+    ],
+    workflows: [
+        {
+            title: "Discover a version-guarded IDC imaging cohort",
+            description: "Discover filter values, then query a current-release page. Preserve provider warnings, source context and explicit pagination.",
+            keywords: ["IDC", "cohort", "manifest", "release", "DICOM"],
+            code: `// Discover /idc/v3/attributes and /attributes/Modality/values before selecting values.
+const version = await api.get("/idc/v3/version");
+if (!version || version.__staged || version._staging || version.__api_error || version.__stage_error || version.error || version.isError || !version.idc_index_data_version) return version;
+const guard = { expected_index_version: version.idc_index_data_version };
+const filters = { terms: { Modality: ["CT"] } };
+const counts = await api.post("/idc/v3/cohort/counts", { filters }, guard);
+if (!counts || counts.__staged || counts._staging || counts.__api_error || counts.__stage_error || counts.error || counts.isError || counts.series === undefined) return counts;
+const page = await api.post("/idc/v3/cohort/manifest", { filters, page: 0, page_size: 10 }, guard);
+// Retain both envelopes and inspect warnings/filters_applied before using the page.
+// returned/total_series describe completeness. Download links are series prefixes.
+return { counts, page };`,
         },
     ],
 };

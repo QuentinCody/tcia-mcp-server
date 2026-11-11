@@ -1,8 +1,19 @@
 import type { ApiFetchFn } from "@bio-mcp/shared/codemode/catalog";
+import { commercialTciaFetch } from "./commercial-profile";
 import { tciaFetch } from "./http";
+import { idcFetch } from "./idc";
+import { idcError } from "./idc-http";
+import { idcObjects } from "./idc-objects";
+import { idcCompleteness } from "./idc-completeness";
 
 export function createTciaApiFetch(): ApiFetchFn {
-    return async (request) => {
+    const unrestricted: ApiFetchFn = async (request) => {
+        const normalized = request.path.startsWith("/") ? request.path : `/${request.path}`;
+        if (normalized === "/idc" || normalized.startsWith("/idc/")) {
+            const data = await (normalized.startsWith("/idc/series/") ? idcObjects : idcFetch)({ ...request, path: normalized });
+            return { status: 200, data, completeness: idcCompleteness(data) };
+        }
+        if (request.method.toUpperCase() !== "GET" || request.body !== undefined) idcError("legacy NBIA routes accept GET without a body only");
         const response = await tciaFetch(request.path, request.params);
 
         if (!response.ok) {
@@ -30,4 +41,7 @@ export function createTciaApiFetch(): ApiFetchFn {
         const data = await response.json();
         return { status: response.status, data };
     };
+    // A reselling caller gets the license rules of commercial-profile.ts.
+    // The request of each other caller goes to the adapter with no change.
+    return (request) => (request.licenseProfile === "commercial" ? commercialTciaFetch(request, unrestricted) : unrestricted(request));
 }
